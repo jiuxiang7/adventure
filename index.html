@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#070914">
+  <title>直升轮椅大冒险</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23090c18'/%3E%3Cpath d='M14 46 32 14l18 32-18-9z' fill='%235df2ff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <div class="page-glow" aria-hidden="true"></div>
+  <div class="page-grid" aria-hidden="true"></div>
+
+  <main id="stage" class="stage" aria-label="Adventure 横版弹幕游戏">
+    <canvas id="game" aria-label="游戏画布"></canvas>
+
+    <div id="loading" class="loading" role="status" aria-live="polite">
+      <div class="loading__eyebrow">A SIDE-SCROLLING BULLET HELL</div>
+      <div class="loading__logo">ADVENTURE</div>
+      <div class="loading__bar"><span id="loadingBar"></span></div>
+      <div class="loading__text" id="loadingText">正在装填弹药…</div>
+    </div>
+
+    <div class="rotate-notice" aria-hidden="true">
+      <div class="rotate-notice__phone"></div>
+      <strong>请横屏游玩</strong>
+      <span>ADVENTURE 需要更宽广的舞台</span>
+    </div>
+
+    <p class="sr-only">
+      Adventure 横版弹幕游戏。使用 W A S D 移动，W 向上飞行，S 加速下落，A D 左右移动。
+      按空格射击。移动到地图最右侧进入关卡。击败三个阶段的 Boss 完成冒险。
+    </p>
+  </main>
+
+  <script src="src/game.js"></script>
+</body>
+</html>
