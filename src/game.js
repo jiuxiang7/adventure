@@ -4476,10 +4476,11 @@
           } else {
             setTimeout(tryLoad, 240 * attempt);
           }
-        }, 15000);
+        }, 30000);
 
-        const bust = attempt > 0 ? `${src.includes("?") ? "&" : "?"}retry=${attempt}-${Date.now()}` : "";
-        img.src = `${src}${bust}`;
+        // Retry the exact same URL so GitHub Pages / the CDN can reuse a
+        // response that may have finished just after a transient failure.
+        img.src = src;
       };
 
       tryLoad();
