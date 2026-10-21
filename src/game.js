@@ -1869,13 +1869,6 @@
         b.ringTimer = Math.max(b.ringTimer, 1.0);
         b.specialTimer = rand(9, 15);
         b.flash = 0.18;
-        game.toast = {
-          text: b.dashSide < 0 ? "BOSS 停在左侧" : "BOSS 停在右侧",
-          sub: "继续射击",
-          time: 0,
-          duration: 1.25,
-          accent: "#ffd18a",
-        };
       }
     }
   }
@@ -4445,24 +4438,141 @@
     requestAnimationFrame(loop);
   }
 
-  function loadImages() {
-    const entries = Object.entries(IMAGE_SRC);
-    let loaded = 0;
+  function loadImageWithRetry(src, attempts = 4) {
     return new Promise((resolve, reject) => {
-      entries.forEach(([key, src]) => {
+      let attempt = 0;
+
+      const tryLoad = () => {
         const img = new Image();
-        img.onload = () => {
-          images[key] = img;
-          loaded += 1;
-          if (loadingBar) loadingBar.style.width = `${(loaded / entries.length) * 100}%`;
-          if (loaded === entries.length) resolve();
+        img.decoding = "async";
+        let settled = false;
+        let timer = null;
+
+        const finish = (ok) => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          if (ok) {
+            resolve(img);
+            return;
+          }
+          attempt += 1;
+          if (attempt >= attempts) {
+            reject(new Error(`无法加载素材：${src}`));
+            return;
+          }
+          setTimeout(tryLoad, 240 * attempt);
         };
-        img.onerror = () => {
-          reject(new Error(`无法加载素材：${src}`));
-        };
-        img.src = src;
-      });
+
+        img.onload = () => finish(true);
+        img.onerror = () => finish(false);
+        timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          attempt += 1;
+          if (attempt >= attempts) {
+            reject(new Error(`加载素材超时：${src}`));
+          } else {
+            setTimeout(tryLoad, 240 * attempt);
+          }
+        }, 15000);
+
+        const bust = attempt > 0 ? `${src.includes("?") ? "&" : "?"}retry=${attempt}-${Date.now()}` : "";
+        img.src = `${src}${bust}`;
+      };
+
+      tryLoad();
     });
+  }
+
+  async function loadImages() {
+    const entries = Object.entries(IMAGE_SRC);
+    const total = entries.length;
+    let cursor = 0;
+    let loaded = 0;
+    const failures = [];
+
+    const updateProgress = () => {
+      if (loadingBar) loadingBar.style.width = `${(loaded / total) * 100}%`;
+      if (loadingText && loaded < total) {
+        loadingText.textContent = `正在加载素材 ${loaded}/${total}`;
+      }
+    };
+
+    const loadOne = async (key, src) => {
+      let image = null;
+      for (let pass = 0; pass < 2 && !image; pass += 1) {
+        try {
+          image = await loadImageWithRetry(src, 4);
+        } catch (error) {
+          if (pass === 0) {
+            if (loadingText) loadingText.textContent = "网络波动，正在重试素材…";
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          } else {
+            failures.push({ key, src, error });
+          }
+        }
+      }
+      if (image) images[key] = image;
+      loaded += 1;
+      updateProgress();
+    };
+
+    const worker = async () => {
+      while (cursor < total) {
+        const index = cursor;
+        cursor += 1;
+        const [key, src] = entries[index];
+        await loadOne(key, src);
+      }
+    };
+
+    updateProgress();
+    await Promise.all(Array.from({ length: Math.min(4, total) }, () => worker()));
+
+    if (failures.length) {
+      const detail = failures.map((f) => f.src).join(", ");
+      throw new Error(`部分素材加载失败：${detail}`);
+    }
+  }
+
+  function showLoadFailure(error) {
+    console.error(error);
+    if (!loadingEl) return;
+
+    loadingEl.classList.remove("is-hidden");
+    loadingEl.style.cursor = "pointer";
+    loadingEl.title = "点击重新加载";
+    if (loadingBar) {
+      loadingBar.style.width = "100%";
+      loadingBar.style.background = "linear-gradient(90deg, #ff5b79, #ffb15c)";
+    }
+
+    let autoRetried = false;
+    try {
+      autoRetried = sessionStorage.getItem("adventure_reload_retry") === "1";
+    } catch {
+      autoRetried = false;
+    }
+
+    if (!autoRetried) {
+      try {
+        sessionStorage.setItem("adventure_reload_retry", "1");
+      } catch {
+        /* Private browsing can reject sessionStorage. */
+      }
+      if (loadingText) loadingText.textContent = "网络波动，正在重新加载…";
+      setTimeout(() => window.location.reload(), 1800);
+    } else if (loadingText) {
+      loadingText.textContent = "素材加载失败 · 点击重试";
+    }
+
+    loadingEl.addEventListener(
+      "click",
+      () => window.location.reload(),
+      { once: true }
+    );
   }
 
   function applyDebugScenario() {
@@ -4552,8 +4662,13 @@
 
     try {
       resizeCanvas();
-      loadingText.textContent = "Loading…";
+      if (loadingText) loadingText.textContent = "正在加载素材…";
       await loadImages();
+      try {
+        sessionStorage.removeItem("adventure_reload_retry");
+      } catch {
+        /* sessionStorage may be unavailable. */
+      }
       setupAudioTracks();
       prepareBackground2();
       initAtmosphere();
@@ -4563,9 +4678,7 @@
       if (loadingEl) loadingEl.classList.add("is-hidden");
       requestAnimationFrame(loop);
     } catch (error) {
-      if (loadingText) loadingText.textContent = "失败，请通过本地服务器打开此页面。";
-      if (loadingBar) loadingBar.style.background = "#ff5b79";
-      console.error(error);
+      showLoadFailure(error);
     }
   }
 
