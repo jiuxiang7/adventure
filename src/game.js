@@ -2007,9 +2007,13 @@
     game.flash = Math.max(game.flash, 0.75);
     game.shake = 30;
     stopMusic();
-    playMusic("victory1", false, 0.55);
+    // victory1 belongs exclusively to the Boss 1 clear. Boss 2 and Boss 3
+    // end with the ordinary hit/explosion feedback only.
+    if (stage === 1) {
+      playMusic("victory1", false, 0.55);
+      sfx.win();
+    }
     sfx.explode();
-    sfx.win();
 
     const cx = boss.x;
     const cy = boss.y;
