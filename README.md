@@ -11,7 +11,7 @@ adventure/
 ├─ preview.jpg
 ├─ assets/
 │  ├─ audio/     # fight1 / fight2 / victory1
-│  └─ images/    # 背景、角色、Boss、子弹
+│  └─ images/    # 原始素材 + opt/ 下的运行时压缩图
 └─ src/
    ├─ game.js
    └─ style.css

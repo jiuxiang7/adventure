@@ -22,31 +22,31 @@
   const ROOSTER_W = ROOSTER_H * (791 / 1013);
 
   const SPRITE_CROP = {
-    player: { x: 276, y: 180, w: 614, h: 1008 },
-    boss1: { x: 0, y: 0, w: 394, h: 640 },
-    boss1to2: { x: 0, y: 0, w: 796, h: 1015 },
-    boss2: { x: 0, y: 0, w: 664, h: 738 },
-    boss3: { x: 0, y: 0, w: 1001, h: 1416 },
-    bullet1: { x: 0, y: 0, w: 767, h: 772 },
-    bullet2: { x: 0, y: 0, w: 1227, h: 1396 },
-    bullet3: { x: 0, y: 0, w: 1024, h: 1024 },
-    playerbullet: { x: 2, y: 2, w: 750, h: 682 },
-    mice: { x: 0, y: 0, w: 1079, h: 998 },
+    player: { x: 0, y: 0, w: 256, h: 420 },
+    boss1: { x: 0, y: 0, w: 392, h: 640 },
+    boss1to2: { x: 0, y: 0, w: 596, h: 760 },
+    boss2: { x: 0, y: 0, w: 663, h: 738 },
+    boss3: { x: 0, y: 0, w: 678, h: 960 },
+    bullet1: { x: 0, y: 0, w: 127, h: 128 },
+    bullet2: { x: 0, y: 0, w: 112, h: 128 },
+    bullet3: { x: 0, y: 0, w: 128, h: 128 },
+    playerbullet: { x: 0, y: 0, w: 96, h: 87 },
+    mice: { x: 0, y: 0, w: 256, h: 237 },
   };
 
   const IMAGE_SRC = {
     background1: "assets/images/background1.jpg",
-    background2: "assets/images/background2.jpg",
-    player: "assets/images/player.png",
-    playerbullet: "assets/images/playerbullet.png",
-    boss1: "assets/images/boss1.png",
-    boss1to2: "assets/images/boss1to2.png",
-    boss2: "assets/images/boss2.png",
-    boss3: "assets/images/boss3.png",
-    bullet1: "assets/images/bullet1.png",
-    bullet2: "assets/images/bullet2.png",
-    bullet3: "assets/images/bullet3.png",
-    mice: "assets/images/mice.png",
+    background2: "assets/images/opt/background2.webp",
+    player: "assets/images/opt/player.webp",
+    playerbullet: "assets/images/opt/playerbullet.webp",
+    boss1: "assets/images/opt/boss1.webp",
+    boss1to2: "assets/images/opt/boss1to2.webp",
+    boss2: "assets/images/opt/boss2.webp",
+    boss3: "assets/images/opt/boss3.webp",
+    bullet1: "assets/images/opt/bullet1.webp",
+    bullet2: "assets/images/opt/bullet2.webp",
+    bullet3: "assets/images/opt/bullet3.webp",
+    mice: "assets/images/opt/mice.webp",
   };
 
   const AUDIO_SRC = {
@@ -4495,8 +4495,9 @@
 
     const updateProgress = () => {
       if (loadingBar) loadingBar.style.width = `${(loaded / total) * 100}%`;
-      if (loadingText && loaded < total) {
-        loadingText.textContent = `正在加载素材 ${loaded}/${total}`;
+      if (loadingText) {
+        loadingText.textContent =
+          loaded < total ? `正在加载素材 ${loaded}/${total}` : "加载完成";
       }
     };
 
