@@ -10,9 +10,9 @@
      --------------------------------------------------------------------- */
   const W = 1280;
   const H = 720;
-  const GROUND = 624;
+  const GROUND = 640;
 
-  const PLAYER_H = 104;
+  const PLAYER_H = 96;
   const PLAYER_W = PLAYER_H * (614 / 1008);
   const PLAYER_HALF = PLAYER_H / 2;
   const PLAYER_MIN_Y = 82 + PLAYER_HALF;
@@ -31,6 +31,7 @@
     bullet2: { x: 0, y: 0, w: 1227, h: 1396 },
     bullet3: { x: 0, y: 0, w: 1024, h: 1024 },
     playerbullet: { x: 2, y: 2, w: 750, h: 682 },
+    mice: { x: 0, y: 0, w: 1079, h: 998 },
   };
 
   const IMAGE_SRC = {
@@ -45,6 +46,7 @@
     bullet1: "assets/images/bullet1.png",
     bullet2: "assets/images/bullet2.png",
     bullet3: "assets/images/bullet3.png",
+    mice: "assets/images/mice.png",
   };
 
   const AUDIO_SRC = {
@@ -382,6 +384,21 @@
     cheat() {
       tone(520, 1040, 0.13, "triangle", 0.028);
     },
+    deflect() {
+      tone(300, 900, 0.1, "sine", 0.026);
+      tone(520, 1320, 0.08, "triangle", 0.016, 0.03);
+    },
+    charge() {
+      tone(180, 520, 0.55, "sawtooth", 0.022);
+      tone(340, 680, 0.4, "sine", 0.018, 0.12);
+    },
+    lock() {
+      tone(900, 320, 0.12, "square", 0.02);
+    },
+    dash() {
+      noiseBurst(0.22, 0.055, 950);
+      tone(220, 75, 0.2, "sawtooth", 0.026);
+    },
     win() {
       tone(440, 660, 0.42, "triangle", 0.04);
       tone(660, 990, 0.42, "triangle", 0.03, 0.12);
@@ -465,7 +482,22 @@
     combatEnabled: false,
     lowHpPulse: 0,
     cheat: false,
+    mice: null,
   };
+
+  function makeMice() {
+    return {
+      x: W / 2,
+      y: GROUND - 30,
+      drawW: 65,
+      drawH: 60,
+      hitW: 68,
+      hitH: 60,
+      flash: 0,
+      pulse: 0,
+      hintShown: false,
+    };
+  }
 
   function makePlayer(x = 180, y = PLAYER_MAX_Y) {
     return {
@@ -589,6 +621,27 @@
       cn: "电❤️我",
       theme: BOSS_THEME.boss3,
       phase2: false,
+      homeX: x,
+      homeY: y,
+      specialTimer: rand(8, 13),
+      dashState: "idle",
+      dashTime: 0,
+      dashAngle: 0,
+      dashLocked: false,
+      dashTargetX: x,
+      dashTargetY: y,
+      dashTravelled: 0,
+      dashDistance: 0,
+      dashSide: -1,
+      dashHit: false,
+      settleFromX: x,
+      settleFromY: y,
+      settleToX: x,
+      settleToY: y,
+      dashFromX: x,
+      dashFromY: y,
+      dashDirX: 0,
+      dashDirY: 1,
     };
   }
 
@@ -833,6 +886,7 @@
     game.damageTexts.length = 0;
     game.ghosts.length = 0;
     game.boss = null;
+    game.mice = makeMice();
     game.stageBanner = null;
     game.toast = null;
     game.exitReady = false;
@@ -1187,17 +1241,19 @@
     if (!p || p.dead) return;
     p.shootCd = 0.11;
     p.muzzle = 0.07;
-    const bx = p.x + PLAYER_W / 2 - 8;
+    const dir = p.face < 0 ? -1 : 1;
+    const bx = p.x + dir * (PLAYER_W / 2 - 8);
     const by = p.y - 6;
     game.playerBullets.push({
       x: bx,
       y: by,
-      vx: 940,
+      vx: 940 * dir,
       vy: 0,
       r: 5.5,
       damage: 9,
       life: 2.4,
       age: 0,
+      deflected: false,
     });
     game.shake = Math.max(game.shake, 0.9);
     sfx.shoot();
@@ -1205,7 +1261,7 @@
       spawnParticle({
         x: bx,
         y: by,
-        vx: rand(50, 170),
+        vx: rand(50, 170) * dir,
         vy: rand(-35, 35),
         life: rand(0.08, 0.2),
         size: rand(1, 2.4),
@@ -1228,7 +1284,56 @@
       b.life -= dt;
       b.age += dt;
 
-      let remove = b.life <= 0 || b.x > W + 80 || b.y < -80 || b.y > H + 80;
+      let remove =
+        b.life <= 0 ||
+        b.x > W + 80 ||
+        b.x < -80 ||
+        b.y < -80 ||
+        b.y > H + 80;
+
+      // The MICE gadget at the bottom-centre refracts any player shot upward.
+      if (!remove && !b.deflected && game.mice) {
+        const m = game.mice;
+        const mx = m.x - m.hitW / 2;
+        const my = m.y - m.hitH / 2;
+        if (circleRect(b.x, b.y, b.r, mx, my, m.hitW, m.hitH)) {
+          b.x = m.x;
+          b.y = my - 6;
+          b.vx = 0;
+          b.vy = -1000;
+          b.life = 2.2;
+          b.age = 0;
+          b.deflected = true;
+          m.flash = 0.24;
+          m.pulse = 1;
+          game.shake = Math.max(game.shake, 3);
+          sfx.deflect();
+          shockwave(m.x, my, 58, "rgba(114, 244, 255, 0.8)", 2, 0.35);
+          burst(m.x, my, {
+            count: 10,
+            colors: ["#8ff6ff", "#ffffff", "#ffd166"],
+            speedMin: 25,
+            speedMax: 140,
+            gravity: -20,
+            lifeMin: 0.15,
+            lifeMax: 0.4,
+            sizeMin: 1,
+            sizeMax: 2.6,
+            angleMin: Math.PI,
+            angleMax: TAU,
+          });
+          if (!m.hintShown) {
+            m.hintShown = true;
+            game.toast = {
+              text: "MICE // 弹道折射",
+              sub: "玩家子弹已转为向上发射",
+              time: 0,
+              duration: 1.6,
+              accent: "#82f5ff",
+            };
+          }
+        }
+      }
 
       if (!remove && game.boss && game.boss.active && !game.boss.dying) {
         const bossHitbox = getBossHitbox(game.boss);
@@ -1311,11 +1416,20 @@
     const p = game.player;
     if (!b || !b.active || !p || p.dead) return;
     if (b.hitW <= 0) return;
+    if (p.invuln > 0) return;
     const playerHitbox = getPlayerHitbox();
     const bossHitbox = getBossHitbox(b);
     if (playerHitbox && rectsOverlap(playerHitbox, bossHitbox)) {
-      hurtPlayer(22, b.x, b.y);
-      if (game.mode === "fight") {
+      const isDash =
+        b.kind === "boss3" && b.dashState === "dash" && !b.dashHit;
+      hurtPlayer(isDash ? 38 : 22, b.x, b.y);
+      if (isDash) {
+        b.dashHit = true;
+        game.shake = Math.max(game.shake, 26);
+        game.flash = Math.max(game.flash, 0.24);
+        shockwave(p.x, p.y, 152, "rgba(255, 221, 136, 0.9)", 4, 0.5);
+      }
+      if (game.mode === "fight" && !game.cheat) {
         p.x -= 24;
         p.vx = -220;
         shockwave(p.x, p.y, 88, "rgba(255, 255, 255, 0.5)", 2, 0.3);
@@ -1364,7 +1478,9 @@
 
   function fireAimedFan(boss, kind, count, spread, speed, muzzleOffset = 42) {
     const p = game.player;
-    const ox = boss.x - muzzleOffset;
+    const muzzleDir =
+      boss.kind === "boss3" ? (boss.face >= 0 ? 1 : -1) : -1;
+    const ox = boss.x + muzzleDir * muzzleOffset;
     const oy = boss.y + 8;
     const aim = Math.atan2(p.y - oy, p.x - ox);
     fireFan(kind, ox, oy, aim, count, spread, speed);
@@ -1579,6 +1695,191 @@
     }
   }
 
+  function startBoss3Special(b) {
+    b.dashState = "rise";
+    b.dashTime = 0;
+    b.dashFromX = b.x;
+    b.dashFromY = b.y;
+    b.dashLocked = false;
+    b.dashHit = false;
+    b.dashAngle = Math.atan2(
+      game.player.y - b.y,
+      game.player.x - b.x
+    );
+    b.dashTargetX = game.player.x;
+    b.dashTargetY = game.player.y;
+    b.dashSide = game.player.x < W / 2 ? -1 : 1;
+    b.firePulse = 0;
+    b.flash = 0.2;
+    game.shake = Math.max(game.shake, 8);
+    game.toast = {
+      text: "冲撞蓄力",
+      sub: "离开红色预警轨道",
+      time: 0,
+      duration: 1.5,
+      accent: "#ff8a8a",
+    };
+    sfx.charge();
+  }
+
+  function finishBoss3Dash(b) {
+    b.dashState = "settle";
+    b.dashTime = 0;
+    b.settleFromX = b.x;
+    b.settleFromY = Math.min(b.y, GROUND - 100);
+    b.settleToX = b.dashSide < 0 ? 220 : W - 220;
+    b.settleToY = clamp(b.settleFromY, 300, 390);
+    b.y = b.settleFromY;
+    game.shake = Math.max(game.shake, 20);
+    game.flash = Math.max(game.flash, 0.16);
+    shockwave(b.x, b.y, 220, "rgba(255, 166, 117, 0.8)", 3.5, 0.55);
+    burst(b.x, b.y, {
+      count: 22,
+      colors: ["#ffffff", "#ffd28a", "#81dcff"],
+      speedMin: 30,
+      speedMax: 240,
+      gravity: 30,
+      lifeMin: 0.25,
+      lifeMax: 0.7,
+    });
+  }
+
+  function updateBoss3Special(b, dt) {
+    const p = game.player;
+
+    if (b.dashState === "rise") {
+      b.dashTime += dt;
+      const k = clamp(b.dashTime / 0.78, 0, 1);
+      const e = easeOutCubic(k);
+      b.x = lerp(b.dashFromX, W / 2, e);
+      b.y = lerp(b.dashFromY, 235, e);
+      b.rot = Math.sin(b.dashTime * 9) * 0.03;
+      b.face = p.x < b.x ? -1 : 1;
+      if (k >= 1) {
+        b.dashState = "charge";
+        b.dashTime = 0;
+        b.dashLocked = false;
+        b.x = W / 2;
+        b.y = 235;
+        b.dashAngle = Math.atan2(p.y - b.y, p.x - b.x);
+        b.dashTargetX = p.x;
+        b.dashTargetY = p.y;
+        shockwave(b.x, b.y, 160, "rgba(255, 124, 128, 0.55)", 2, 0.4);
+      }
+      return;
+    }
+
+    if (b.dashState === "charge") {
+      b.dashTime += dt;
+      b.x = W / 2 + Math.sin(b.dashTime * 30) * 2.2;
+      b.y = 235 + Math.sin(b.dashTime * 17) * 2.2;
+      b.rot = Math.sin(b.dashTime * 20) * 0.018;
+
+      if (!b.dashLocked && b.dashTime < 0.68) {
+        b.dashAngle = Math.atan2(p.y - b.y, p.x - b.x);
+        b.dashTargetX = p.x;
+        b.dashTargetY = p.y;
+        b.face = p.x < b.x ? -1 : 1;
+      } else if (!b.dashLocked) {
+        b.dashLocked = true;
+        b.dashSide = p.x < W / 2 ? -1 : 1;
+        b.face = Math.cos(b.dashAngle) < 0 ? -1 : 1;
+        game.flash = Math.max(game.flash, 0.14);
+        shockwave(b.dashTargetX, b.dashTargetY, 70, "rgba(255, 89, 107, 0.85)", 2, 0.35);
+        sfx.lock();
+      }
+
+      if (b.dashTime >= 1.14) {
+        const dx = b.dashTargetX - b.x;
+        const dy = b.dashTargetY - b.y;
+        const len = Math.max(1, Math.hypot(dx, dy));
+        b.dashDirX = dx / len;
+        b.dashDirY = dy / len;
+        b.dashAngle = Math.atan2(dy, dx);
+        b.dashDistance = len + 170;
+        b.dashTravelled = 0;
+        b.dashState = "dash";
+        b.dashTime = 0;
+        b.dashHit = false;
+        b.face =
+          b.dashDirX < -0.05 ? -1 : b.dashDirX > 0.05 ? 1 : b.dashSide < 0 ? -1 : 1;
+        b.flash = 0.35;
+        game.shake = Math.max(game.shake, 16);
+        game.flash = Math.max(game.flash, 0.22);
+        sfx.dash();
+        shockwave(b.x, b.y, 180, "rgba(255, 217, 142, 0.85)", 3, 0.45);
+      }
+      return;
+    }
+
+    if (b.dashState === "dash") {
+      const speed = 1480;
+      const step = speed * dt;
+      b.dashTime += dt;
+      b.x += b.dashDirX * step;
+      b.y += b.dashDirY * step;
+      b.dashTravelled += step;
+      b.dashAngle = Math.atan2(b.dashDirY, b.dashDirX);
+      b.face = b.dashDirX < -0.03 ? -1 : b.dashDirX > 0.03 ? 1 : b.dashSide < 0 ? -1 : 1;
+      b.rot = 0;
+      b.flash = Math.max(b.flash, 0.08);
+      game.shake = Math.max(game.shake, 2.5);
+
+      if (Math.random() < 0.9) {
+        spawnParticle({
+          x: b.x - b.dashDirX * b.hitW * 0.35 + rand(-18, 18),
+          y: b.y - b.dashDirY * b.hitH * 0.35 + rand(-18, 18),
+          vx: -b.dashDirX * rand(80, 250) + rand(-40, 40),
+          vy: -b.dashDirY * rand(80, 250) + rand(-40, 40),
+          gravity: 0,
+          life: rand(0.18, 0.4),
+          size: rand(1.5, 3.6),
+          color: Math.random() > 0.45 ? "#ffd28a" : "#7bddff",
+          shape: "spark",
+          alpha: 0.8,
+        });
+      }
+
+      const hitWorld =
+        b.dashTravelled >= b.dashDistance ||
+        b.y > GROUND - 96 ||
+        b.x < 40 ||
+        b.x > W - 40;
+      if (hitWorld) finishBoss3Dash(b);
+      return;
+    }
+
+    if (b.dashState === "settle") {
+      b.dashTime += dt;
+      const k = clamp(b.dashTime / 0.52, 0, 1);
+      const e = easeOutCubic(k);
+      b.x = lerp(b.settleFromX, b.settleToX, e);
+      b.y = lerp(b.settleFromY, b.settleToY, e);
+      b.rot = Math.sin(b.dashTime * 16) * 0.035 * (1 - k);
+      b.face = b.dashSide < 0 ? 1 : -1;
+      if (k >= 1) {
+        b.x = b.settleToX;
+        b.y = b.settleToY;
+        b.homeX = b.settleToX;
+        b.homeY = b.settleToY;
+        b.dashState = "idle";
+        b.dashTime = 0;
+        b.shootTimer = Math.max(b.shootTimer, 0.75);
+        b.spiralTimer = Math.max(b.spiralTimer, 0.7);
+        b.ringTimer = Math.max(b.ringTimer, 1.0);
+        b.specialTimer = rand(9, 15);
+        b.flash = 0.18;
+        game.toast = {
+          text: b.dashSide < 0 ? "BOSS 停在左侧" : "BOSS 停在右侧",
+          sub: "继续射击",
+          time: 0,
+          duration: 1.25,
+          accent: "#ffd18a",
+        };
+      }
+    }
+  }
+
   function updateBoss3(b, dt) {
     const t = b.t;
     const phase2 = b.hp < b.maxHp * 0.46;
@@ -1597,10 +1898,24 @@
       };
     }
 
-    b.x = 995 + Math.sin(t * 0.76) * (phase2 ? 70 : 48);
-    b.y = 324 + Math.sin(t * 1.62) * (phase2 ? 116 : 100) + Math.cos(t * 2.7) * 14;
+    if (b.dashState !== "idle") {
+      updateBoss3Special(b, dt);
+      return;
+    }
+
+    b.specialTimer -= dt;
+    if (b.specialTimer <= 0) {
+      startBoss3Special(b);
+      updateBoss3Special(b, 0);
+      return;
+    }
+
+    const homeX = b.homeX ?? 995;
+    const homeY = b.homeY ?? 324;
+    b.x = homeX + Math.sin(t * 0.76) * (phase2 ? 70 : 48);
+    b.y = homeY + Math.sin(t * 1.62) * (phase2 ? 116 : 100) + Math.cos(t * 2.7) * 14;
     b.rot = Math.sin(t * 1.35) * 0.032;
-    b.face = -1;
+    b.face = game.player.x >= b.x ? 1 : -1;
 
     b.shootTimer -= dt;
     b.spiralTimer -= dt;
@@ -1611,9 +1926,10 @@
     if (b.spiralTimer <= 0) {
       const arms = phase2 ? 3 : 2;
       const speed = phase2 ? 168 : 145;
+      const muzzleDir = b.face >= 0 ? 1 : -1;
       for (let i = 0; i < arms; i += 1) {
         const angle = b.spiralAngle + (i / arms) * TAU;
-        spawnEnemyBullet("bullet3", b.x - 18, b.y + 12, angle, speed, {
+        spawnEnemyBullet("bullet3", b.x + muzzleDir * 18, b.y + 12, angle, speed, {
           spin: rand(-5, 5),
           accel: 4,
           maxSpeed: 230,
@@ -2048,6 +2364,10 @@
       if (game.player.hp > 0 && game.player.hp <= 30) {
         game.lowHpPulse += dt;
       }
+    }
+    if (game.mice) {
+      game.mice.flash = Math.max(0, game.mice.flash - dt * 2.8);
+      game.mice.pulse = Math.max(0, game.mice.pulse - dt * 2.1);
     }
   }
 
@@ -2944,6 +3264,70 @@
   /* ---------------------------------------------------------------------
      Rendering — player / boss / bullets
      --------------------------------------------------------------------- */
+  function drawMice() {
+    const m = game.mice;
+    if (!m) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.38;
+    ctx.fillStyle = "#02050b";
+    ctx.beginPath();
+    ctx.ellipse(m.x, GROUND + 4, 36, 7, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    drawSprite("mice", m.x, m.y, m.drawW, m.drawH, {
+      filter:
+        m.flash > 0
+          ? `brightness(${1.2 + m.flash * 2.2}) saturate(1.2)`
+          : null,
+    });
+
+    if (m.pulse > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = m.pulse * 0.45;
+      ctx.strokeStyle = "#80f6ff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y - 8, 36 + (1 - m.pulse) * 26, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const t = game.time;
+    const blink = 0.42 + 0.18 * Math.sin(t * 3.2);
+    ctx.save();
+    ctx.globalAlpha = blink;
+    ctx.strokeStyle = "rgba(111, 243, 255, 0.85)";
+    ctx.lineWidth = 1.4;
+    for (let i = 0; i < 2; i += 1) {
+      const ay = m.y - 38 - i * 8 + Math.sin(t * 2.4 + i) * 2;
+      ctx.beginPath();
+      ctx.moveTo(m.x - 8, ay + 5);
+      ctx.lineTo(m.x, ay);
+      ctx.lineTo(m.x + 8, ay + 5);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    text("MICE", m.x, GROUND + 22, {
+      size: 8,
+      weight: 700,
+      color: "rgba(142, 239, 255, 0.6)",
+      align: "center",
+      font: MONO_FONT,
+      spacing: 2.4,
+    });
+    text("↑ UP", m.x + 34, GROUND + 22, {
+      size: 7.5,
+      weight: 600,
+      color: "rgba(255, 221, 129, 0.52)",
+      font: MONO_FONT,
+      spacing: 0.6,
+    });
+  }
+
   function drawShadows() {
     const p = game.player;
     if (p && !p.dead) {
@@ -2952,7 +3336,7 @@
       ctx.globalAlpha = 0.2 * hRatio;
       ctx.fillStyle = "#02050b";
       ctx.beginPath();
-      ctx.ellipse(p.x, GROUND + 4, 34 * hRatio, 7 * hRatio, 0, 0, TAU);
+      ctx.ellipse(p.x, GROUND + 4, 30 * hRatio, 7 * hRatio, 0, 0, TAU);
       ctx.fill();
       ctx.restore();
     }
@@ -3000,24 +3384,6 @@
       ctx.restore();
     }
 
-    if (p.invuln > 0.15) {
-      ctx.save();
-      ctx.globalAlpha = 0.25 + auraPulse * 0.2;
-      ctx.strokeStyle = "#79f5ff";
-      ctx.lineWidth = 1.4;
-      ctx.setLineDash([3, 5]);
-      roundedRectPath(
-        p.x - PLAYER_W / 2 - 5,
-        p.y - PLAYER_H / 2 - 5,
-        PLAYER_W + 10,
-        PLAYER_H + 10,
-        18
-      );
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-    }
-
     drawSprite("player", p.x, p.y, PLAYER_W, PLAYER_H, {
       flip: p.face < 0,
       alpha: blink ? 0.42 : 1,
@@ -3040,7 +3406,7 @@
 
     // Muzzle flash.
     if (p.muzzle > 0) {
-      const mx = p.x + PLAYER_W / 2 - 8;
+      const mx = p.x + p.face * (PLAYER_W / 2 - 8);
       const my = p.y - 6;
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
@@ -3054,6 +3420,118 @@
       ctx.fill();
       ctx.restore();
     }
+  }
+
+  function drawBossTelegraph() {
+    const b = game.boss;
+    if (
+      !b ||
+      b.kind !== "boss3" ||
+      !b.active ||
+      (b.dashState !== "charge" && b.dashState !== "dash")
+    ) {
+      return;
+    }
+
+    const dashing = b.dashState === "dash";
+    const locked = b.dashLocked || dashing;
+    const dx = dashing ? b.dashDirX : Math.cos(b.dashAngle);
+    const dy = dashing ? b.dashDirY : Math.sin(b.dashAngle);
+    const pulse = 0.5 + 0.5 * Math.sin(game.time * 18);
+    const alpha = dashing ? 0.45 : locked ? 0.62 + pulse * 0.25 : 0.35 + pulse * 0.14;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.clip();
+
+    if (!dashing) {
+      const reach = 1500;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(255, 58, 88, ${alpha * 0.16})`;
+      ctx.lineWidth = 34;
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x + dx * reach, b.y + dy * reach);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(255, 207, 128, ${alpha})`;
+      ctx.lineWidth = locked ? 2.4 : 1.5;
+      ctx.setLineDash(locked ? [13, 8] : [7, 12]);
+      ctx.beginPath();
+      ctx.moveTo(b.x + dx * 40, b.y + dy * 40);
+      ctx.lineTo(b.x + dx * reach, b.y + dy * reach);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const perpX = -dy;
+      const perpY = dx;
+      for (let i = 1; i <= 7; i += 1) {
+        const cx = b.x + dx * i * 165;
+        const cy = b.y + dy * i * 165;
+        if (cx < -40 || cx > W + 40 || cy < -40 || cy > H + 40) continue;
+        ctx.strokeStyle = `rgba(255, 167, 112, ${alpha * 0.65})`;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(cx - dx * 7 - perpX * 7, cy - dy * 7 - perpY * 7);
+        ctx.lineTo(cx + dx * 7, cy + dy * 7);
+        ctx.lineTo(cx - dx * 7 + perpX * 7, cy - dy * 7 + perpY * 7);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      if (locked) {
+        const tx = clamp(b.dashTargetX, 30, W - 30);
+        const ty = clamp(b.dashTargetY, 80, GROUND - 20);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = `rgba(255, 94, 112, ${0.5 + pulse * 0.4})`;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.arc(tx, ty, 23 + pulse * 7, 0, TAU);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(tx - 32, ty);
+        ctx.lineTo(tx - 10, ty);
+        ctx.moveTo(tx + 10, ty);
+        ctx.lineTo(tx + 32, ty);
+        ctx.moveTo(tx, ty - 32);
+        ctx.lineTo(tx, ty - 10);
+        ctx.moveTo(tx, ty + 10);
+        ctx.lineTo(tx, ty + 32);
+        ctx.stroke();
+        ctx.restore();
+        text("CHARGE", tx, ty - 52, {
+          size: 9,
+          weight: 800,
+          color: "rgba(255, 160, 135, 0.8)",
+          align: "center",
+          font: MONO_FONT,
+          spacing: 2.2,
+        });
+      }
+    } else {
+      // A hot streak behind the charging boss.
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const tailX = b.x - dx * 420;
+      const tailY = b.y - dy * 420;
+      const grad = ctx.createLinearGradient(tailX, tailY, b.x, b.y);
+      grad.addColorStop(0, "rgba(255, 82, 97, 0)");
+      grad.addColorStop(0.55, "rgba(255, 96, 95, 0.12)");
+      grad.addColorStop(1, "rgba(255, 216, 154, 0.38)");
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 25;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(tailX, tailY);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
   }
 
   function drawBoss() {
@@ -3504,7 +3982,7 @@
     ctx.save();
     ctx.globalAlpha = a;
     const w = 330;
-    fillRoundRect(W / 2 - w / 2, y - 29, w, 58, 11, "rgba(4, 9, 18, 0.78)");
+    fillRoundRect(W / 2 - w / 2, y - 29, w, 58, 11, "rgba(4, 9, 18, 0.92)");
     strokeRoundRect(W / 2 - w / 2 + 0.5, y - 28.5, w - 1, 57, 11, "rgba(158, 226, 255, 0.16)", 1);
     ctx.fillStyle = t.accent || "#6ff4ff";
     ctx.fillRect(W / 2 - w / 2, y - 15, 2, 30);
@@ -3889,6 +4367,7 @@
     drawMotes();
     drawFloor();
     drawShadows();
+    drawMice();
 
     if (game.mode === "intro") {
       drawIntroScene();
@@ -3905,6 +4384,7 @@
           showPrompt: game.player.x > W - 360,
         });
       }
+      drawBossTelegraph();
       drawBoss();
       drawEnemyBullets();
       drawPlayerBullets();
@@ -4072,7 +4552,7 @@
 
     try {
       resizeCanvas();
-      loadingText.textContent = "正在装填弹药…";
+      loadingText.textContent = "Loading…";
       await loadImages();
       setupAudioTracks();
       prepareBackground2();
@@ -4083,7 +4563,7 @@
       if (loadingEl) loadingEl.classList.add("is-hidden");
       requestAnimationFrame(loop);
     } catch (error) {
-      if (loadingText) loadingText.textContent = "素材加载失败，请通过本地服务器打开此页面。";
+      if (loadingText) loadingText.textContent = "失败，请通过本地服务器打开此页面。";
       if (loadingBar) loadingBar.style.background = "#ff5b79";
       console.error(error);
     }
